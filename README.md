@@ -1,36 +1,99 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FocusTrack
 
-## Getting Started
+FocusTrack is a full-stack productivity SaaS platform with:
 
-First, run the development server:
+- JWT authentication
+- Task tracking with drag-and-drop ordering
+- Rich text notes with pinning and tags
+- Pomodoro timer with persisted session history
+- Analytics dashboard with weekly chart, category pie, and activity heatmap
+- Light and dark theme system with semantic design tokens
+- PWA support (manifest + service worker)
+
+## Tech Stack
+
+- Next.js 16 (App Router)
+- TypeScript
+- Tailwind CSS v4
+- Prisma + PostgreSQL
+- React Query + Zustand
+- TipTap editor
+- dnd-kit
+- Recharts
+- Zod + bcryptjs + jose (JWT)
+
+## Project Structure
+
+- `src/app/(auth)` auth pages
+- `src/app/(app)` protected SaaS pages
+- `src/app/api` API route handlers
+- `src/components` UI, layout, charts, notes, providers
+- `src/lib` auth, prisma, validators, helpers
+- `src/store` Zustand store
+- `prisma/schema.prisma` database schema
+
+## Environment Variables
+
+Update `.env`:
+
+```env
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB?schema=public"
+JWT_SECRET="replace-with-a-strong-secret"
+NEXT_PUBLIC_APP_NAME="FocusTrack"
+```
+
+## Local Development
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Generate Prisma client:
+
+```bash
+npm run prisma:generate
+```
+
+3. Run migrations:
+
+```bash
+npm run prisma:migrate
+```
+
+4. Start development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Quality Checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npm run build
+```
 
-## Learn More
+## API Overview
 
-To learn more about Next.js, take a look at the following resources:
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `GET /api/tasks`, `POST /api/tasks`, `PUT /api/tasks/:id`, `DELETE /api/tasks/:id`
+- `GET /api/notes`, `POST /api/notes`, `PUT /api/notes/:id`, `DELETE /api/notes/:id`
+- `GET /api/pomodoro/sessions`, `POST /api/pomodoro/sessions`
+- `GET /api/analytics/stats`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy to Vercel
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Push this repository to GitHub.
+2. Import project in Vercel.
+3. Add environment variables from `.env`.
+4. Provision PostgreSQL and set `DATABASE_URL`.
+5. Deploy.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For first deployment, run migrations against your production database.
