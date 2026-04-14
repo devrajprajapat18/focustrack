@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { subDays, format } from "date-fns";
+import { addDays, eachDayOfInterval, format, subDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { apiSuccess } from "@/lib/api";
 import { requireRequestUser } from "@/lib/request-auth";
@@ -13,7 +13,8 @@ export async function GET(request: NextRequest) {
   const userId = auth.session.id;
   const today = new Date();
   const last7 = subDays(today, 6);
-  const last90 = subDays(today, 89);
+  const heatmapStart = subDays(today, 364);
+  const heatmapEndExclusive = addDays(today, 1);
 
   const [
     totalTasks,
@@ -25,6 +26,8 @@ export async function GET(request: NextRequest) {
     weeklyTasks,
     user,
     heatmapTasks,
+    heatmapFocusSessions,
+    heatmapNotes,
   ] = await Promise.all([
     prisma.task.count({ where: { userId } }),
     prisma.task.count({ where: { userId, completed: true } }),
@@ -34,7 +37,9 @@ export async function GET(request: NextRequest) {
     prisma.task.groupBy({ by: ["category"], where: { userId }, _count: { _all: true } }),
     prisma.task.findMany({ where: { userId, createdAt: { gte: last7 } }, select: { createdAt: true } }),
     prisma.user.findUnique({ where: { id: userId } }),
-    prisma.task.findMany({ where: { userId, createdAt: { gte: last90 } }, select: { createdAt: true } }),
+    prisma.task.findMany({ where: { userId, completed: true, completedAt: { gte: heatmapStart, lt: heatmapEndExclusive } }, select: { completedAt: true } }),
+    prisma.pomodoroSession.findMany({ where: { userId, mode: "focus", createdAt: { gte: heatmapStart, lt: heatmapEndExclusive } }, select: { createdAt: true } }),
+    prisma.note.findMany({ where: { userId, createdAt: { gte: heatmapStart, lt: heatmapEndExclusive } }, select: { createdAt: true } }),
   ]);
 
   const completionRate = totalTasks ? (completedTasks / totalTasks) * 100 : 0;
@@ -50,15 +55,35 @@ export async function GET(request: NextRequest) {
     byDayMap.set(day, (byDayMap.get(day) || 0) + 1);
   });
 
-  const heatmapMap = new Map<string, number>();
+  const tasksByDay = new Map<string, number>();
   heatmapTasks.forEach((task) => {
-    const day = format(task.createdAt, "yyyy-MM-dd");
-    heatmapMap.set(day, (heatmapMap.get(day) || 0) + 1);
+    if (!task.completedAt) {
+      return;
+    }
+    const day = format(task.completedAt, "yyyy-MM-dd");
+    tasksByDay.set(day, (tasksByDay.get(day) || 0) + 1);
   });
 
-  const heatmap = Array.from({ length: 90 }, (_, index) => {
-    const date = format(subDays(today, 89 - index), "yyyy-MM-dd");
-    return { date, count: heatmapMap.get(date) || 0 };
+  const focusByDay = new Map<string, number>();
+  heatmapFocusSessions.forEach((session) => {
+    const day = format(session.createdAt, "yyyy-MM-dd");
+    focusByDay.set(day, (focusByDay.get(day) || 0) + 1);
+  });
+
+  const notesByDay = new Map<string, number>();
+  heatmapNotes.forEach((note) => {
+    const day = format(note.createdAt, "yyyy-MM-dd");
+    notesByDay.set(day, (notesByDay.get(day) || 0) + 1);
+  });
+
+  const heatmap = eachDayOfInterval({ start: heatmapStart, end: today }).map((day) => {
+    const date = format(day, "yyyy-MM-dd");
+    return {
+      date,
+      tasksCompleted: tasksByDay.get(date) || 0,
+      focusSessions: focusByDay.get(date) || 0,
+      notesCreated: notesByDay.get(date) || 0,
+    };
   });
 
   return apiSuccess({

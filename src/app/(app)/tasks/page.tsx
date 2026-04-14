@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -62,17 +63,25 @@ function SortableDragHandle({ id }: { id: string }) {
 
 export default function TasksPage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const sensors = useSensors(useSensor(PointerSensor));
 
   const [view, setView] = useState<"list" | "calendar" | "board">("list");
   const [showForm, setShowForm] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined);
-  const [filters, setFilters] = useState<TaskFilters>({
-    search: "",
-    category: "All",
-    priority: "All",
-    status: "all",
+  const [filters, setFilters] = useState<TaskFilters>(() => {
+    const completedOn = searchParams.get("completedOn");
+    const parsed = completedOn ? new Date(completedOn) : undefined;
+    const validCompletedOn = parsed && !Number.isNaN(parsed.getTime()) ? parsed : undefined;
+
+    return {
+      search: "",
+      category: "All",
+      priority: "All",
+      status: validCompletedOn ? "completed" : "all",
+      completedOn: validCompletedOn,
+    };
   });
 
   const { data = [], isLoading } = useQuery({
@@ -151,6 +160,17 @@ export default function TasksPage() {
     // Date filter
     if (filters.selectedDate) {
       result = getTasksForDate(result, filters.selectedDate);
+    }
+
+    // Completed date filter (from analytics heatmap deep-link)
+    if (filters.completedOn) {
+      const selected = format(filters.completedOn, "yyyy-MM-dd");
+      result = result.filter((task) => {
+        if (!task.completedAt) {
+          return false;
+        }
+        return format(new Date(task.completedAt), "yyyy-MM-dd") === selected;
+      });
     }
 
     return result;
@@ -273,7 +293,8 @@ export default function TasksPage() {
     filters.category !== "All" ||
     filters.priority !== "All" ||
     filters.status !== "all" ||
-    filters.selectedDate;
+    filters.selectedDate ||
+    filters.completedOn;
 
   return (
     <div className="space-y-6">

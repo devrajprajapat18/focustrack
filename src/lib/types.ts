@@ -14,6 +14,7 @@ export interface TaskItem {
   priority: Priority;
   dueDate?: string | null;
   completed: boolean;
+  completedAt?: string | null;
   pinned: boolean;
   order: number;
   createdAt: string;
@@ -48,5 +49,5 @@ export interface AnalyticsStats {
   focusHours: number;
   weeklyActivity: { day: string; count: number }[];
   tasksByCategory: { name: string; value: number }[];
-  heatmap: { date: string; count: number }[];
+  heatmap: { date: string; tasksCompleted: number; focusSessions?: number; notesCreated?: number }[];
 }

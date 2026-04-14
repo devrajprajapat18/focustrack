@@ -14,6 +14,7 @@ export interface TaskFilters {
   priority: string;
   status: "all" | "active" | "completed";
   selectedDate?: Date;
+  completedOn?: Date;
 }
 
 interface TaskFiltersProps {
@@ -141,7 +142,8 @@ export function TaskFiltersBar({ filters, onChange }: TaskFiltersProps) {
         filters.category !== "All" ||
         filters.priority !== "All" ||
         filters.status !== "all" ||
-        filters.selectedDate) && (
+        filters.selectedDate ||
+        filters.completedOn) && (
         <div className="flex flex-wrap gap-2 text-sm">
           <span className="text-text-secondary">Active filters:</span>
           {filters.search && (
@@ -167,6 +169,11 @@ export function TaskFiltersBar({ filters, onChange }: TaskFiltersProps) {
           {filters.selectedDate && (
             <span className="rounded-full bg-divider px-2 py-1">
               {format(filters.selectedDate, "MMM d, yyyy")}
+            </span>
+          )}
+          {filters.completedOn && (
+            <span className="rounded-full bg-divider px-2 py-1">
+              Completed on {format(filters.completedOn, "MMM d, yyyy")}
             </span>
           )}
         </div>
