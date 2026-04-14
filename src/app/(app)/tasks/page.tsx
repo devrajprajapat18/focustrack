@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -16,69 +16,47 @@ import {
   useSortable,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Search, Plus, Calendar } from "lucide-react";
+import { Plus, GripVertical, List, CalendarDays, Columns3 } from "lucide-react";
+import {
+  addMonths,
+  subMonths,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isToday,
+  format,
+} from "date-fns";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { fetcher, mutateJson } from "@/lib/fetcher";
-import { formatDueDate } from "@/lib/format";
-import { TASK_CATEGORIES, TASK_PRIORITIES } from "@/lib/constants";
 import type { TaskItem, Priority } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { TaskCard } from "@/components/tasks/task-card";
+import { TaskForm } from "@/components/tasks/task-form";
+import { TaskFiltersBar, type TaskFilters } from "@/components/tasks/task-filters";
+import { TaskGroup } from "@/components/tasks/task-group";
+import { EmptyState } from "@/components/tasks/empty-state";
+import {
+  groupTasksByDate,
+  getGroupLabel,
+  getGroupIcon,
+  getTasksForDate,
+} from "@/lib/task-utils";
 
-const priorityVariant: Record<Priority, "success" | "warning" | "danger"> = {
-  LOW: "success",
-  MEDIUM: "warning",
-  HIGH: "danger",
-};
-
-function SortableTask({
-  task,
-  onToggle,
-  onDelete,
-}: {
-  task: TaskItem;
-  onToggle: (task: TaskItem) => void;
-  onDelete: (id: string) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: task.id });
+function SortableDragHandle({ id }: { id: string }) {
+  const { attributes, listeners, setNodeRef } = useSortable({ id });
 
   return (
-    <Card
+    <button
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="cursor-grab active:cursor-grabbing"
+      type="button"
+      className="rounded-lg p-1 text-text-muted hover:bg-divider hover:text-text-primary transition-colors"
+      aria-label="Drag task"
       {...attributes}
       {...listeners}
     >
-      <CardContent className="flex items-center justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            checked={task.completed}
-            onChange={() => onToggle(task)}
-            className="mt-1 size-5 rounded border-border accent-secondary"
-          />
-          <div>
-            <p className={cn("font-semibold", task.completed && "line-through text-text-muted")}>{task.title}</p>
-            <p className="text-sm text-text-secondary">{task.category}</p>
-            <div className="mt-2 flex items-center gap-2 text-xs text-text-secondary">
-              <Calendar className="size-3" />
-              {formatDueDate(task.dueDate)}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={priorityVariant[task.priority]}>{task.priority}</Badge>
-          <Button variant="ghost" size="sm" onClick={() => onDelete(task.id)}>
-            Delete
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+      <GripVertical className="size-4" />
+    </button>
   );
 }
 
@@ -86,42 +64,43 @@ export default function TasksPage() {
   const queryClient = useQueryClient();
   const sensors = useSensors(useSensor(PointerSensor));
 
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("All");
-  const [priorityFilter, setPriorityFilter] = useState<string>("All");
+  const [view, setView] = useState<"list" | "calendar" | "board">("list");
   const [showForm, setShowForm] = useState(false);
-  const [newTask, setNewTask] = useState({
-    title: "",
-    category: "Work",
-    priority: "MEDIUM" as Priority,
-    dueDate: "",
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | undefined>(undefined);
+  const [filters, setFilters] = useState<TaskFilters>({
+    search: "",
+    category: "All",
+    priority: "All",
+    status: "all",
   });
 
-  const { data = [] } = useQuery({
+  const { data = [], isLoading } = useQuery({
     queryKey: ["tasks"],
     queryFn: () => fetcher<TaskItem[]>("/api/tasks"),
   });
 
+  // Create task mutation
   const createTask = useMutation({
-    mutationFn: () =>
-      mutateJson<TaskItem>("/api/tasks", "POST", {
-        title: newTask.title,
-        category: newTask.category,
-        priority: newTask.priority,
-        dueDate: newTask.dueDate || null,
-      }),
+    mutationFn: (taskData: {
+      title: string;
+      description?: string;
+      category: string;
+      priority: Priority;
+      dueDate?: string;
+    }) => mutateJson<TaskItem>("/api/tasks", "POST", taskData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["analytics-stats"] });
       setShowForm(false);
-      setNewTask({ title: "", category: "Work", priority: "MEDIUM", dueDate: "" });
-      toast.success("Task created");
+      toast.success("Task created successfully");
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Failed to create task");
     },
   });
 
+  // Update task mutation
   const updateTask = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Partial<TaskItem> }) =>
       mutateJson<TaskItem>(`/api/tasks/${id}`, "PUT", payload),
@@ -131,124 +110,546 @@ export default function TasksPage() {
     },
   });
 
+  // Delete task mutation
   const deleteTask = useMutation({
     mutationFn: (id: string) => mutateJson<{ ok: true }>(`/api/tasks/${id}`, "DELETE"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["analytics-stats"] });
-      toast.success("Task removed");
+      toast.success("Task deleted");
     },
   });
 
-  const filtered = useMemo(() => {
-    return data.filter((task) => {
-      const matchesSearch = task.title.toLowerCase().includes(search.toLowerCase());
-      const matchesCategory = categoryFilter === "All" || task.category === categoryFilter;
-      const matchesPriority = priorityFilter === "All" || task.priority === priorityFilter;
-      return matchesSearch && matchesCategory && matchesPriority;
+  // Filter tasks based on active filters
+  const filteredTasks = useMemo(() => {
+    let result = data;
+
+    // Search filter
+    if (filters.search) {
+      result = result.filter((task) =>
+        task.title.toLowerCase().includes(filters.search.toLowerCase())
+      );
+    }
+
+    // Category filter
+    if (filters.category !== "All") {
+      result = result.filter((task) => task.category === filters.category);
+    }
+
+    // Priority filter
+    if (filters.priority !== "All") {
+      result = result.filter((task) => task.priority === filters.priority);
+    }
+
+    // Status filter
+    if (filters.status === "active") {
+      result = result.filter((task) => !task.completed);
+    } else if (filters.status === "completed") {
+      result = result.filter((task) => task.completed);
+    }
+
+    // Date filter
+    if (filters.selectedDate) {
+      result = getTasksForDate(result, filters.selectedDate);
+    }
+
+    return result;
+  }, [data, filters]);
+
+  // Group tasks by date
+  const groupedTasks = useMemo(() => {
+    if (filters.selectedDate) {
+      // If a specific date is selected, don't group
+      return { active: filteredTasks, completed: [] };
+    }
+    const grouped = groupTasksByDate(filteredTasks);
+    return {
+      active: [
+        ...grouped.overdue,
+        ...grouped.today,
+        ...grouped.tomorrow,
+        ...grouped.upcoming,
+      ],
+      completed: grouped.completed,
+    };
+  }, [filteredTasks, filters.selectedDate]);
+
+  // Pinned tasks
+  const pinnedTasks = useMemo(
+    () => groupedTasks.active.filter((task) => task.pinned),
+    [groupedTasks]
+  );
+
+  const activeTasks = useMemo(
+    () => groupedTasks.active.filter((task) => !task.pinned),
+    [groupedTasks]
+  );
+
+  const completedTasks = groupedTasks.completed;
+  const groupedActive = useMemo(() => groupTasksByDate(activeTasks), [activeTasks]);
+
+  const boardColumns = useMemo(() => {
+    return {
+      todo: [...groupedActive.upcoming, ...groupedActive.tomorrow],
+      inProgress: [...groupedActive.today, ...groupedActive.overdue],
+      done: completedTasks,
+    };
+  }, [groupedActive, completedTasks]);
+
+  const monthDays = useMemo(() => {
+    const start = startOfMonth(calendarMonth);
+    const end = endOfMonth(calendarMonth);
+    return eachDayOfInterval({ start, end });
+  }, [calendarMonth]);
+
+  const monthTaskCount = useMemo(() => {
+    const map = new Map<string, number>();
+    filteredTasks.forEach((task) => {
+      if (!task.dueDate) {
+        return;
+      }
+      const key = format(new Date(task.dueDate), "yyyy-MM-dd");
+      map.set(key, (map.get(key) || 0) + 1);
     });
-  }, [data, search, categoryFilter, priorityFilter]);
+    return map;
+  }, [filteredTasks]);
 
-  function onDragEnd(event: DragEndEvent) {
+  const calendarTasks = useMemo(() => {
+    if (!calendarSelectedDate) {
+      return [] as TaskItem[];
+    }
+    return filteredTasks.filter((task) => {
+      if (!task.dueDate) {
+        return false;
+      }
+      return format(new Date(task.dueDate), "yyyy-MM-dd") === format(calendarSelectedDate, "yyyy-MM-dd");
+    });
+  }, [filteredTasks, calendarSelectedDate]);
+
+  // Handle drag end
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) {
-      return;
-    }
+    if (!over || active.id === over.id) return;
 
-    const oldIndex = filtered.findIndex((item) => item.id === active.id);
-    const newIndex = filtered.findIndex((item) => item.id === over.id);
-    if (oldIndex < 0 || newIndex < 0) {
-      return;
-    }
+    const allActive = [...pinnedTasks, ...activeTasks];
+    const oldIndex = allActive.findIndex((item) => item.id === active.id);
+    const newIndex = allActive.findIndex((item) => item.id === over.id);
 
-    const moved = arrayMove(filtered, oldIndex, newIndex);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const moved = arrayMove(allActive, oldIndex, newIndex);
     moved.forEach((task, index) => {
       if (task.order !== index) {
         updateTask.mutate({ id: task.id, payload: { order: index } });
       }
     });
+  };
+
+  // Calculate stats
+  const stats = useMemo(
+    () => ({
+      total: data.length,
+      completed: data.filter((t) => t.completed).length,
+      pending: data.filter((t) => !t.completed).length,
+    }),
+    [data]
+  );
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-16 w-full" />
+        <div className="space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+      </div>
+    );
   }
+
+  const hasFiltersApplied =
+    filters.search ||
+    filters.category !== "All" ||
+    filters.priority !== "All" ||
+    filters.status !== "all" ||
+    filters.selectedDate;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-5xl font-semibold">Tasks</h1>
-          <p className="mt-2 text-xl text-text-secondary">
-            {data.filter((task) => !task.completed).length} pending · {data.filter((task) => task.completed).length} completed
-          </p>
+          <h1 className="text-4xl font-bold">Tasks</h1>
+          <div className="mt-2 flex flex-wrap gap-4 text-sm">
+            <p className="text-text-secondary">
+              <span className="font-semibold text-text-primary">{stats.pending}</span>{" "}
+              pending
+            </p>
+            <p className="text-text-secondary">
+              <span className="font-semibold text-text-primary">
+                {stats.completed}
+              </span>{" "}
+              completed
+            </p>
+            <p className="text-text-secondary">
+              <span className="font-semibold text-text-primary">{stats.total}</span> total
+            </p>
+          </div>
         </div>
-        <Button onClick={() => setShowForm((prev) => !prev)}>
-          <Plus className="size-4" /> Add Task
+        <Button onClick={() => setShowForm(!showForm)} size="lg">
+          <Plus className="size-4" />
+          Add Task
         </Button>
       </div>
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_180px_180px]">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
-          <Input placeholder="Search tasks..." className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} />
-        </div>
-        <select className="h-11 rounded-xl border border-border bg-surface px-3" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-          <option value="All">All Categories</option>
-          {TASK_CATEGORIES.map((item) => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-        <select className="h-11 rounded-xl border border-border bg-surface px-3" value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
-          <option value="All">All Priorities</option>
-          {TASK_PRIORITIES.map((item) => (
-            <option key={item} value={item}>{item}</option>
-          ))}
-        </select>
-      </section>
+      <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-2 md:w-auto">
+        <Button variant={view === "list" ? "default" : "ghost"} size="sm" onClick={() => setView("list")}>
+          <List className="size-4" />
+          List
+        </Button>
+        <Button variant={view === "calendar" ? "default" : "ghost"} size="sm" onClick={() => setView("calendar")}>
+          <CalendarDays className="size-4" />
+          Calendar
+        </Button>
+        <Button variant={view === "board" ? "default" : "ghost"} size="sm" onClick={() => setView("board")}>
+          <Columns3 className="size-4" />
+          Board
+        </Button>
+      </div>
 
+      {/* Form */}
       {showForm && (
-        <Card>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <Input
-              placeholder="Task title"
-              value={newTask.title}
-              onChange={(event) => setNewTask((prev) => ({ ...prev, title: event.target.value }))}
-            />
-            <select className="h-11 rounded-xl border border-border bg-surface px-3" value={newTask.category} onChange={(event) => setNewTask((prev) => ({ ...prev, category: event.target.value }))}>
-              {TASK_CATEGORIES.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-            <select className="h-11 rounded-xl border border-border bg-surface px-3" value={newTask.priority} onChange={(event) => setNewTask((prev) => ({ ...prev, priority: event.target.value as Priority }))}>
-              {TASK_PRIORITIES.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-            <Input type="date" value={newTask.dueDate} onChange={(event) => setNewTask((prev) => ({ ...prev, dueDate: event.target.value }))} />
-            <div className="md:col-span-2 lg:col-span-4">
-              <Button disabled={!newTask.title || createTask.isPending} onClick={() => createTask.mutate()}>
-                Create Task
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <TaskForm
+          onSubmit={(data) => createTask.mutate(data)}
+          isLoading={createTask.isPending}
+          onCancel={() => setShowForm(false)}
+        />
       )}
 
-      {filtered.length ? (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={filtered.map((task) => task.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-3">
-              {filtered.map((task) => (
-                <SortableTask
-                  key={task.id}
-                  task={task}
-                  onToggle={(item) => updateTask.mutate({ id: item.id, payload: { completed: !item.completed } })}
-                  onDelete={(id) => deleteTask.mutate(id)}
-                />
+      {/* Filters */}
+      <TaskFiltersBar filters={filters} onChange={setFilters} />
+
+      {/* Tasks */}
+      {filteredTasks.length === 0 ? (
+        <EmptyState
+          icon={hasFiltersApplied ? "🔍" : "🎉"}
+          title={
+            hasFiltersApplied
+              ? "No tasks match your filters"
+              : "No tasks yet"
+          }
+          description={
+            hasFiltersApplied
+              ? "Try adjusting your filters to find tasks"
+              : "Create your first task to get started!"
+          }
+          actionLabel="New Task"
+          onAction={() => setShowForm(true)}
+        />
+      ) : (
+        <>
+          {view === "list" && (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="space-y-4">
+                {pinnedTasks.length > 0 && !filters.selectedDate && (
+                  <>
+                    <div className="flex items-center gap-2 rounded-lg bg-accent/10 px-4 py-3">
+                      <span className="text-lg">📌</span>
+                      <h2 className="font-semibold text-accent">Pinned ({pinnedTasks.length})</h2>
+                    </div>
+                    <SortableContext
+                      items={pinnedTasks.map((t) => t.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2">
+                        {pinnedTasks.map((task) => (
+                          <TaskCard
+                            key={task.id}
+                            task={task}
+                            onToggle={(t) =>
+                              updateTask.mutate({
+                                id: t.id,
+                                payload: { completed: !t.completed },
+                              })
+                            }
+                            onDelete={(id) => deleteTask.mutate(id)}
+                            onPin={(id, pinned) =>
+                              updateTask.mutate({
+                                id,
+                                payload: { pinned },
+                              })
+                            }
+                            dragHandle={<SortableDragHandle id={task.id} />}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </>
+                )}
+
+                {!filters.selectedDate && (
+                  <>
+                    {groupedActive.overdue.length > 0 && (
+                      <TaskGroup
+                        title={getGroupLabel("overdue", groupedActive.overdue.length)}
+                        icon={getGroupIcon("overdue")}
+                        tasks={groupedActive.overdue}
+                        onToggle={(t) =>
+                          updateTask.mutate({
+                            id: t.id,
+                            payload: { completed: !t.completed },
+                          })
+                        }
+                        onDelete={(id) => deleteTask.mutate(id)}
+                        onPin={(id, pinned) =>
+                          updateTask.mutate({ id, payload: { pinned } })
+                        }
+                        dragHandle={(id) => <SortableDragHandle id={id} />}
+                        defaultExpanded={true}
+                        isOverdue={true}
+                      />
+                    )}
+
+                    {groupedActive.today.length > 0 && (
+                      <TaskGroup
+                        title={getGroupLabel("today", groupedActive.today.length)}
+                        icon={getGroupIcon("today")}
+                        tasks={groupedActive.today}
+                        onToggle={(t) =>
+                          updateTask.mutate({
+                            id: t.id,
+                            payload: { completed: !t.completed },
+                          })
+                        }
+                        onDelete={(id) => deleteTask.mutate(id)}
+                        onPin={(id, pinned) =>
+                          updateTask.mutate({ id, payload: { pinned } })
+                        }
+                        dragHandle={(id) => <SortableDragHandle id={id} />}
+                        defaultExpanded={true}
+                      />
+                    )}
+
+                    {groupedActive.tomorrow.length > 0 && (
+                      <TaskGroup
+                        title={getGroupLabel("tomorrow", groupedActive.tomorrow.length)}
+                        icon={getGroupIcon("tomorrow")}
+                        tasks={groupedActive.tomorrow}
+                        onToggle={(t) =>
+                          updateTask.mutate({
+                            id: t.id,
+                            payload: { completed: !t.completed },
+                          })
+                        }
+                        onDelete={(id) => deleteTask.mutate(id)}
+                        onPin={(id, pinned) =>
+                          updateTask.mutate({ id, payload: { pinned } })
+                        }
+                        dragHandle={(id) => <SortableDragHandle id={id} />}
+                        defaultExpanded={true}
+                      />
+                    )}
+
+                    {groupedActive.upcoming.length > 0 && (
+                      <TaskGroup
+                        title={getGroupLabel("upcoming", groupedActive.upcoming.length)}
+                        icon={getGroupIcon("upcoming")}
+                        tasks={groupedActive.upcoming}
+                        onToggle={(t) =>
+                          updateTask.mutate({
+                            id: t.id,
+                            payload: { completed: !t.completed },
+                          })
+                        }
+                        onDelete={(id) => deleteTask.mutate(id)}
+                        onPin={(id, pinned) =>
+                          updateTask.mutate({ id, payload: { pinned } })
+                        }
+                        dragHandle={(id) => <SortableDragHandle id={id} />}
+                        defaultExpanded={false}
+                      />
+                    )}
+                  </>
+                )}
+
+                {completedTasks.length > 0 && !filters.selectedDate && (
+                  <TaskGroup
+                    title={getGroupLabel("completed", completedTasks.length)}
+                    icon={getGroupIcon("completed")}
+                    tasks={completedTasks}
+                    onToggle={(t) =>
+                      updateTask.mutate({
+                        id: t.id,
+                        payload: { completed: !t.completed },
+                      })
+                    }
+                    onDelete={(id) => deleteTask.mutate(id)}
+                    onPin={(id, pinned) =>
+                      updateTask.mutate({ id, payload: { pinned } })
+                    }
+                    dragHandle={(id) => <SortableDragHandle id={id} />}
+                    defaultExpanded={false}
+                  />
+                )}
+
+                {filters.selectedDate && activeTasks.length > 0 && (
+                  <SortableContext
+                    items={activeTasks.map((t) => t.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-2">
+                      {activeTasks.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          onToggle={(t) =>
+                            updateTask.mutate({
+                              id: t.id,
+                              payload: { completed: !t.completed },
+                            })
+                          }
+                          onDelete={(id) => deleteTask.mutate(id)}
+                          onPin={(id, pinned) =>
+                            updateTask.mutate({
+                              id,
+                              payload: { pinned },
+                            })
+                          }
+                          dragHandle={<SortableDragHandle id={task.id} />}
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                )}
+              </div>
+            </DndContext>
+          )}
+
+          {view === "calendar" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-xl border border-border bg-surface p-3">
+                <Button variant="ghost" size="sm" onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))}>Prev</Button>
+                <h2 className="font-semibold">{format(calendarMonth, "MMMM yyyy")}</h2>
+                <Button variant="ghost" size="sm" onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))}>Next</Button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold text-text-secondary">
+                {[
+                  "Sun",
+                  "Mon",
+                  "Tue",
+                  "Wed",
+                  "Thu",
+                  "Fri",
+                  "Sat",
+                ].map((day) => (
+                  <div key={day}>{day}</div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-2">
+                {monthDays.map((day) => {
+                  const key = format(day, "yyyy-MM-dd");
+                  const count = monthTaskCount.get(key) || 0;
+                  const selected = calendarSelectedDate && format(calendarSelectedDate, "yyyy-MM-dd") === key;
+
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setCalendarSelectedDate(day)}
+                      className={`rounded-xl border border-border p-2 text-left transition hover:bg-divider ${selected ? "bg-primary/10 ring-2 ring-primary/30" : "bg-surface"}`}
+                    >
+                      <div className={`text-sm font-semibold ${isToday(day) ? "text-primary" : "text-text-primary"}`}>{format(day, "d")}</div>
+                      <div className="mt-2 min-h-5 text-xs text-text-secondary">{count ? `${count} task${count > 1 ? "s" : ""}` : ""}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-border bg-surface p-4">
+                <h3 className="font-semibold">
+                  {calendarSelectedDate ? `Tasks on ${format(calendarSelectedDate, "MMM d, yyyy")}` : "Pick a date to view tasks"}
+                </h3>
+                {calendarSelectedDate && calendarTasks.length === 0 && (
+                  <EmptyState
+                    icon="🎉"
+                    title="No tasks for this date"
+                    description="Plan something meaningful for this day."
+                    actionLabel="Add Task"
+                    onAction={() => setShowForm(true)}
+                  />
+                )}
+                {calendarTasks.length > 0 && (
+                  <div className="space-y-2">
+                    {calendarTasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        onToggle={(t) =>
+                          updateTask.mutate({
+                            id: t.id,
+                            payload: { completed: !t.completed },
+                          })
+                        }
+                        onDelete={(id) => deleteTask.mutate(id)}
+                        onPin={(id, pinned) =>
+                          updateTask.mutate({
+                            id,
+                            payload: { pinned },
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {view === "board" && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {[
+                { key: "todo", title: "Todo", tasks: boardColumns.todo },
+                { key: "inProgress", title: "In Progress", tasks: boardColumns.inProgress },
+                { key: "done", title: "Done", tasks: boardColumns.done },
+              ].map((column) => (
+                <div key={column.key} className="rounded-xl border border-border bg-surface p-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="font-semibold">{column.title}</h3>
+                    <span className="rounded-full bg-divider px-2 py-0.5 text-xs text-text-secondary">{column.tasks.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {column.tasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        onToggle={(t) =>
+                          updateTask.mutate({
+                            id: t.id,
+                            payload: { completed: !t.completed },
+                          })
+                        }
+                        onDelete={(id) => deleteTask.mutate(id)}
+                        onPin={(id, pinned) =>
+                          updateTask.mutate({
+                            id,
+                            payload: { pinned },
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
-          </SortableContext>
-        </DndContext>
-      ) : (
-        <Card>
-          <CardContent className="grid h-44 place-items-center text-xl text-text-secondary">No tasks yet. Create your first task!</CardContent>
-        </Card>
+          )}
+        </>
       )}
     </div>
   );

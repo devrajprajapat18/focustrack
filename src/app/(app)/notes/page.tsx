@@ -16,6 +16,7 @@ export default function NotesPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [showEditor, setShowEditor] = useState(false);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("<p>Start writing...</p>");
   const [tags, setTags] = useState("general");
@@ -25,19 +26,27 @@ export default function NotesPage() {
     queryFn: () => fetcher<NoteItem[]>("/api/notes"),
   });
 
-  const createNote = useMutation({
-    mutationFn: () =>
-      mutateJson<NoteItem>("/api/notes", "POST", {
+  const saveNote = useMutation({
+    mutationFn: () => {
+      const payload = {
         title,
         content,
         tags: tags
           .split(",")
           .map((item) => item.trim())
           .filter(Boolean),
-      }),
+      };
+
+      if (selectedNoteId) {
+        return mutateJson<NoteItem>(`/api/notes/${selectedNoteId}`, "PUT", payload);
+      }
+
+      return mutateJson<NoteItem>("/api/notes", "POST", payload);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notes"] });
       queryClient.invalidateQueries({ queryKey: ["analytics-stats"] });
+      setSelectedNoteId(null);
       setTitle("");
       setContent("<p>Start writing...</p>");
       setTags("general");
@@ -66,6 +75,22 @@ export default function NotesPage() {
     [data, query],
   );
 
+  function openNewNote() {
+    setSelectedNoteId(null);
+    setTitle("");
+    setContent("<p>Start writing...</p>");
+    setTags("general");
+    setShowEditor(true);
+  }
+
+  function openExistingNote(note: NoteItem) {
+    setSelectedNoteId(note.id);
+    setTitle(note.title);
+    setContent(note.content);
+    setTags(note.tags.join(", "));
+    setShowEditor(true);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -75,7 +100,7 @@ export default function NotesPage() {
             {data.length} notes · {data.filter((item) => item.pinned).length} pinned
           </p>
         </div>
-        <Button onClick={() => setShowEditor((prev) => !prev)}>
+        <Button onClick={openNewNote}>
           <Plus className="size-4" /> New Note
         </Button>
       </div>
@@ -88,14 +113,17 @@ export default function NotesPage() {
       {showEditor && (
         <Card>
           <CardContent className="space-y-3">
+            <p className="text-sm font-semibold text-text-secondary">
+              {selectedNoteId ? "Editing note" : "Creating note"}
+            </p>
             <Input placeholder="tags, separated, by commas" value={tags} onChange={(event) => setTags(event.target.value)} />
             <NoteEditor
               title={title}
               content={content}
               onTitleChange={setTitle}
               onContentChange={setContent}
-              onSave={() => createNote.mutate()}
-              saving={createNote.isPending}
+              onSave={() => saveNote.mutate()}
+              saving={saveNote.isPending}
             />
           </CardContent>
         </Card>
@@ -104,13 +132,16 @@ export default function NotesPage() {
       {filtered.length ? (
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((note) => (
-            <Card key={note.id}>
+            <Card key={note.id} className="cursor-pointer hover:shadow-lg" onClick={() => openExistingNote(note)}>
               <CardContent>
                 <div className="flex items-start justify-between gap-3">
                   <h3 className="text-lg font-semibold">{note.title}</h3>
                   <button
                     type="button"
-                    onClick={() => updateNote.mutate({ id: note.id, payload: { pinned: !note.pinned } })}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      updateNote.mutate({ id: note.id, payload: { pinned: !note.pinned } });
+                    }}
                     className="rounded-lg p-2 hover:bg-divider"
                     aria-label="Toggle pin"
                   >

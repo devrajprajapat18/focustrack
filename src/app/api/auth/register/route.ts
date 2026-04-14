@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { apiError, apiSuccess, handleApiError } from "@/lib/api";
 import { registerSchema } from "@/lib/validators";
 import { getAuthCookie, signUserToken } from "@/lib/auth";
+import { updateLoginStreak } from "@/lib/streak";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,6 +25,8 @@ export async function POST(request: NextRequest) {
       },
       select: { id: true, name: true, email: true },
     });
+
+    await updateLoginStreak(user.id);
 
     const token = await signUserToken(user);
     const cookie = getAuthCookie(token);

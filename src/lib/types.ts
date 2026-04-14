@@ -14,6 +14,7 @@ export interface TaskItem {
   priority: Priority;
   dueDate?: string | null;
   completed: boolean;
+  pinned: boolean;
   order: number;
   createdAt: string;
   updatedAt: string;

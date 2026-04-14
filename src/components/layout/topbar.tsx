@@ -3,9 +3,12 @@
 import { Bell, Moon, Sun, LogOut, User, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useState, useSyncExternalStore } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/use-app-store";
+import { fetcher } from "@/lib/fetcher";
+import type { UserSession } from "@/lib/types";
 
 export function Topbar() {
   const [open, setOpen] = useState(false);
@@ -18,6 +21,11 @@ export function Topbar() {
   const toggleSidebar = useAppStore((state) => state.toggleSidebar);
   const setMobileSidebarOpen = useAppStore((state) => state.setMobileSidebarOpen);
   const { setTheme, resolvedTheme } = useTheme();
+  
+  const { data: user } = useQuery({
+    queryKey: ["auth-user"],
+    queryFn: () => fetcher<UserSession>("/api/auth/me"),
+  });
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -66,7 +74,7 @@ export function Topbar() {
             onClick={() => setOpen((prev) => !prev)}
             type="button"
           >
-            U
+            {user?.name?.[0]?.toUpperCase() || "U"}
           </button>
           {open && (
             <div className="absolute right-0 mt-2 w-44 rounded-xl border border-border bg-surface p-2 shadow-lg">

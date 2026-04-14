@@ -19,6 +19,7 @@ export const taskSchema = z.object({
   priority: z.enum(TASK_PRIORITIES),
   dueDate: z.string().optional().nullable(),
   completed: z.boolean().optional(),
+  pinned: z.boolean().optional(),
   order: z.number().int().nonnegative().optional(),
 });
 

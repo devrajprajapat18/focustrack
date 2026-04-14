@@ -12,7 +12,11 @@ export async function GET(request: NextRequest) {
 
   const tasks = await prisma.task.findMany({
     where: { userId: auth.session.id },
-    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+    orderBy: [
+      { pinned: "desc" },
+      { completed: "asc" },
+      { createdAt: "desc" },
+    ],
   });
 
   return apiSuccess(tasks);
