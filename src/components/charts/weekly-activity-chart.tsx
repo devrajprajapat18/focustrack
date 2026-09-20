@@ -7,7 +7,7 @@ export function WeeklyActivityChart({ data }: { data: { day: string; count: numb
   const highestCount = Math.max(...data.map((item) => item.count), 0);
 
   return (
-    <Card className="h-full overflow-hidden border-border/80 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--surface)_85%,white)_0%,color-mix(in_oklab,var(--divider)_80%,var(--surface))_100%)]">
+    <Card className="min-h-0 min-w-0 flex-1 overflow-hidden border-border/80 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--surface)_85%,white)_0%,color-mix(in_oklab,var(--divider)_80%,var(--surface))_100%)]">
       <CardHeader className="pb-2">
         <p className="text-xs uppercase tracking-[0.18em] text-text-muted">Trends</p>
         <CardTitle className="mt-1">Weekly Activity</CardTitle>

@@ -5,18 +5,22 @@ import { requireRequestUser } from "@/lib/request-auth";
 import { pomodoroSessionSchema } from "@/lib/validators";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRequestUser(request);
-  if ("error" in auth) {
-    return auth.error;
+  try {
+    const auth = await requireRequestUser(request);
+    if ("error" in auth) {
+      return auth.error;
+    }
+
+    const sessions = await prisma.pomodoroSession.findMany({
+      where: { userId: auth.session.id },
+      take: 20,
+      orderBy: { createdAt: "desc" },
+    });
+
+    return apiSuccess(sessions);
+  } catch (error) {
+    return handleApiError(error);
   }
-
-  const sessions = await prisma.pomodoroSession.findMany({
-    where: { userId: auth.session.id },
-    take: 20,
-    orderBy: { createdAt: "desc" },
-  });
-
-  return apiSuccess(sessions);
 }
 
 export async function POST(request: NextRequest) {

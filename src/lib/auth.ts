@@ -6,7 +6,18 @@ import type { UserSession } from "@/lib/types";
 const TOKEN_COOKIE = "focustrack_token";
 const TOKEN_AGE_SECONDS = 60 * 60 * 24 * 7;
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || "fallback-secret");
+function getSecret(): Uint8Array {
+  const value = process.env.JWT_SECRET;
+  if (!value || value === "change-this-in-production" || value === "fallback-secret") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET must be set to a strong random value in production.");
+    }
+    // Dev-only fallback so `next build` / local dev works without env.
+    // Never use this value in production.
+    return new TextEncoder().encode("dev-only-insecure-secret-do-not-use-in-prod");
+  }
+  return new TextEncoder().encode(value);
+}
 
 export async function signUserToken(session: UserSession) {
   return new SignJWT({
@@ -17,12 +28,12 @@ export async function signUserToken(session: UserSession) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${TOKEN_AGE_SECONDS}s`)
-    .sign(secret);
+    .sign(getSecret());
 }
 
 export async function verifyUserToken(token: string): Promise<UserSession | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, getSecret());
 
     return {
       id: String(payload.id),

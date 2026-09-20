@@ -5,21 +5,31 @@ import { requireRequestUser } from "@/lib/request-auth";
 import { taskSchema } from "@/lib/validators";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRequestUser(request);
-  if ("error" in auth) {
-    return auth.error;
+  try {
+    const auth = await requireRequestUser(request);
+    if ("error" in auth) {
+      return auth.error;
+    }
+
+    const limit = Math.min(
+      Math.max(Number(request.nextUrl.searchParams.get("limit")) || 200, 1),
+      500,
+    );
+
+    const tasks = await prisma.task.findMany({
+      where: { userId: auth.session.id },
+      orderBy: [
+        { pinned: "desc" },
+        { completed: "asc" },
+        { createdAt: "desc" },
+      ],
+      take: limit,
+    });
+
+    return apiSuccess(tasks);
+  } catch (error) {
+    return handleApiError(error);
   }
-
-  const tasks = await prisma.task.findMany({
-    where: { userId: auth.session.id },
-    orderBy: [
-      { pinned: "desc" },
-      { completed: "asc" },
-      { createdAt: "desc" },
-    ],
-  });
-
-  return apiSuccess(tasks);
 }
 
 export async function POST(request: NextRequest) {

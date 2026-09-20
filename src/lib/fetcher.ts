@@ -9,7 +9,7 @@ export async function fetcher<T>(url: string): Promise<T> {
   return payload.data as T;
 }
 
-export async function mutateJson<T>(url: string, method: "POST" | "PUT" | "DELETE", body?: unknown) {
+export async function mutateJson<T>(url: string, method: "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown) {
   const response = await fetch(url, {
     method,
     headers: {

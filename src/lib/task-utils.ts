@@ -50,9 +50,9 @@ export function groupTasksByDate(tasks: TaskItem[]): GroupedTasks {
 
   // Sort each group by priority and creation date
   const sortByPriority = (a: TaskItem, b: TaskItem) => {
-    const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
-    const aPriority = priorityOrder[a.priority] || 999;
-    const bPriority = priorityOrder[b.priority] || 999;
+    const priorityOrder: Record<TaskItem["priority"], number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+    const aPriority = priorityOrder[a.priority] ?? 999;
+    const bPriority = priorityOrder[b.priority] ?? 999;
     if (aPriority !== bPriority) return aPriority - bPriority;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   };

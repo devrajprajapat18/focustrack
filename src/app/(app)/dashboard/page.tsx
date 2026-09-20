@@ -301,7 +301,7 @@ export default function DashboardPage() {
       </section>
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.6fr_1fr]">
-        <div className="space-y-5">
+        <div className="flex min-h-0 min-w-0 flex-col gap-5">
           <WeeklyActivityChart data={analytics.weeklyActivity} />
 
           <Card className="border-border/80 shadow-md">

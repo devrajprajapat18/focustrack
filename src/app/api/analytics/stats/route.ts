@@ -1,14 +1,15 @@
 import { NextRequest } from "next/server";
 import { addDays, eachDayOfInterval, format, subDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
-import { apiSuccess } from "@/lib/api";
+import { apiSuccess, handleApiError } from "@/lib/api";
 import { requireRequestUser } from "@/lib/request-auth";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireRequestUser(request);
-  if ("error" in auth) {
-    return auth.error;
-  }
+  try {
+    const auth = await requireRequestUser(request);
+    if ("error" in auth) {
+      return auth.error;
+    }
 
   const userId = auth.session.id;
   const today = new Date();
@@ -90,13 +91,16 @@ export async function GET(request: NextRequest) {
     totalTasks,
     completedTasks,
     completionRate,
-    currentStreak: user?.loginStreak || 1,
-    longestStreak: user?.longestStreak || 1,
+    currentStreak: user?.loginStreak ?? 1,
+    longestStreak: user?.longestStreak ?? 1,
     focusSessions,
     totalNotes: notesCount,
-    focusHours: Number(((focusSum._sum.duration || 0) / 3600).toFixed(1)),
+    focusHours: Number(((focusSum._sum.duration ?? 0) / 3600).toFixed(1)),
     weeklyActivity: Array.from(byDayMap.entries()).map(([day, count]) => ({ day, count })),
     tasksByCategory: byCategory.map((item) => ({ name: item.category, value: item._count._all })),
     heatmap,
   });
+  } catch (error) {
+    return handleApiError(error);
+  }
 }

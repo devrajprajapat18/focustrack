@@ -1,3 +1,4 @@
+import { differenceInCalendarDays, startOfDay } from "date-fns";
 import { prisma } from "@/lib/prisma";
 
 export async function updateLoginStreak(userId: string) {
@@ -21,10 +22,7 @@ export async function updateLoginStreak(userId: string) {
     return;
   }
 
-  const dayDiff = Math.floor(
-    (new Date(now.toDateString()).getTime() - new Date(lastActive.toDateString()).getTime()) /
-      (1000 * 60 * 60 * 24),
-  );
+  const dayDiff = differenceInCalendarDays(startOfDay(now), startOfDay(lastActive));
 
   if (dayDiff <= 0) {
     return;

@@ -14,9 +14,7 @@ export function handleApiError(error: unknown) {
     return apiError(error.issues.map((issue) => issue.message).join(", "), 422);
   }
 
-  if (error instanceof Error) {
-    return apiError(error.message, 500);
-  }
-
+  // Never leak internal messages/stack traces to clients.
+  console.error("[api-error]", error);
   return apiError("Unexpected server error", 500);
 }

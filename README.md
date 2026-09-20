@@ -15,7 +15,7 @@ FocusTrack is a full-stack productivity SaaS platform with:
 - Next.js 16 (App Router)
 - TypeScript
 - Tailwind CSS v4
-- Prisma + PostgreSQL
+- Prisma + SQLite (local dev via `better-sqlite3`)
 - React Query + Zustand
 - TipTap editor
 - dnd-kit
@@ -34,13 +34,16 @@ FocusTrack is a full-stack productivity SaaS platform with:
 
 ## Environment Variables
 
-Update `.env`:
+Update `.env` (never commit it — it is gitignored):
 
 ```env
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB?schema=public"
-JWT_SECRET="replace-with-a-strong-secret"
+DATABASE_URL="file:./prisma/dev.db"
+JWT_SECRET="replace-with-a-strong-random-secret-min-32-chars"
 NEXT_PUBLIC_APP_NAME="FocusTrack"
 ```
+
+> Generate a secret, e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+> The app refuses to boot in production if `JWT_SECRET` is missing or still the placeholder.
 
 ## Local Development
 
@@ -83,16 +86,21 @@ npm run build
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
-- `GET /api/tasks`, `POST /api/tasks`, `PUT /api/tasks/:id`, `DELETE /api/tasks/:id`
-- `GET /api/notes`, `POST /api/notes`, `PUT /api/notes/:id`, `DELETE /api/notes/:id`
+- `GET /api/tasks`, `POST /api/tasks`, `PUT /api/tasks/:id`, `PATCH /api/tasks/:id`, `DELETE /api/tasks/:id`
+- `GET /api/notes`, `POST /api/notes`, `PUT /api/notes/:id`, `PATCH /api/notes/:id`, `DELETE /api/notes/:id`
 - `GET /api/pomodoro/sessions`, `POST /api/pomodoro/sessions`
 - `GET /api/analytics/stats`
 
 ## Deploy to Vercel
 
+> SQLite (`file:./prisma/dev.db`) is for local dev only — the file does not
+> persist on serverless hosts. For production, switch Prisma to PostgreSQL
+> (`provider = "postgresql"`, `@prisma/adapter-pg` + `pg`) and point
+> `DATABASE_URL` at a hosted DB before deploying.
+
 1. Push this repository to GitHub.
 2. Import project in Vercel.
-3. Add environment variables from `.env`.
+3. Add environment variables from `.env` (with a real `JWT_SECRET`).
 4. Provision PostgreSQL and set `DATABASE_URL`.
 5. Deploy.
 

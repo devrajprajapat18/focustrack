@@ -35,18 +35,26 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireRequestUser(request);
-  if ("error" in auth) {
-    return auth.error;
+  try {
+    const auth = await requireRequestUser(request);
+    if ("error" in auth) {
+      return auth.error;
+    }
+
+    const { id } = await params;
+    const exists = await prisma.task.findFirst({ where: { id, userId: auth.session.id } });
+    if (!exists) {
+      return apiError("Task not found", 404);
+    }
+
+    await prisma.task.delete({ where: { id } });
+
+    return apiSuccess({ ok: true });
+  } catch (error) {
+    return handleApiError(error);
   }
-
-  const { id } = await params;
-  const exists = await prisma.task.findFirst({ where: { id, userId: auth.session.id } });
-  if (!exists) {
-    return apiError("Task not found", 404);
-  }
-
-  await prisma.task.delete({ where: { id } });
-
-  return apiSuccess({ ok: true });
 }
+
+// Partial updates are also accepted via PATCH (same semantics as PUT here
+// for backwards compatibility with existing clients).
+export { PUT as PATCH };
