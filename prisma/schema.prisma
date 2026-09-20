@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 model User {
@@ -47,7 +47,7 @@ model Note {
   id        String   @id @default(cuid())
   title     String
   content   String
-  tags      String[] @default([])
+  tags      String   @default("[]")
   pinned    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

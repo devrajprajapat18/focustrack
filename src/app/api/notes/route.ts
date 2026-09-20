@@ -4,6 +4,19 @@ import { apiSuccess, handleApiError } from "@/lib/api";
 import { requireRequestUser } from "@/lib/request-auth";
 import { noteSchema } from "@/lib/validators";
 
+function parseTags(value: string | null | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((tag): tag is string => typeof tag === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireRequestUser(request);
   if ("error" in auth) {
@@ -15,7 +28,7 @@ export async function GET(request: NextRequest) {
     orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
   });
 
-  return apiSuccess(notes);
+  return apiSuccess(notes.map((note) => ({ ...note, tags: parseTags(note.tags) })));
 }
 
 export async function POST(request: NextRequest) {
@@ -29,13 +42,15 @@ export async function POST(request: NextRequest) {
 
     const note = await prisma.note.create({
       data: {
-        ...body,
-        tags: body.tags || [],
+        title: body.title,
+        content: body.content,
+        tags: JSON.stringify(body.tags || []),
+        pinned: body.pinned ?? false,
         userId: auth.session.id,
       },
     });
 
-    return apiSuccess(note, 201);
+    return apiSuccess({ ...note, tags: parseTags(note.tags) }, 201);
   } catch (error) {
     return handleApiError(error);
   }
